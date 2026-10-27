@@ -13,7 +13,8 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
+const RAW_SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
+const SERVER_URL = RAW_SERVER_URL.replace(/\/+$/, ''); // șterge automat orice slash pus din greșeală la final
 const REDIRECT_URI = `${SERVER_URL}/auth/discord/callback`;
 
 // Serve static assets from public folder
