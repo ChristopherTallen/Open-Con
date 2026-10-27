@@ -7,22 +7,30 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 1e7 // Allow up to 10MB file/image uploads
+  maxHttpBufferSize: 1e7 // 10MB file limit
 });
 
 const PORT = process.env.PORT || 3000;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
+const REDIRECT_URI = `${SERVER_URL}/auth/discord/callback`;
+
+// Serve static assets from public folder
 app.use(express.static('public'));
 
+// Discord Bot Client Setup
 const discordClient = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences
   ]
 });
 
-// Cache for channel webhooks to send messages with custom avatars and names
+// Cache for channel webhooks
 const webhookCache = {};
 
 async function getOrCreateWebhook(channel) {
@@ -44,19 +52,105 @@ async function getOrCreateWebhook(channel) {
   }
 }
 
+// ---------------------------------------------------------------------
+// DISCORD OAUTH2 AUTHENTICATION ROUTES
+// ---------------------------------------------------------------------
+app.get('/auth/discord', (req, res) => {
+  const scope = encodeURIComponent('identify guilds guilds.members.read');
+  const authUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${scope}`;
+  res.redirect(authUrl);
+});
+
+app.get('/auth/discord/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.redirect('/?error=no_code');
+
+  try {
+    // Exchange authorization code for token
+    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: REDIRECT_URI
+      })
+    });
+    const tokens = await tokenResponse.json();
+    if (!tokens.access_token) {
+      console.error('Tokens response error:', tokens);
+      return res.redirect('/?error=auth_failed');
+    }
+
+    // Fetch user profile
+    const userResponse = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` }
+    });
+    const discordUser = await userResponse.json();
+
+    let serverNick = discordUser.global_name || discordUser.username;
+    let roles = [];
+    let isDev = false;
+
+    const guild = discordClient.guilds.cache.find(g => g.name.toLowerCase().includes('open con')) || discordClient.guilds.cache.first();
+    if (guild) {
+      try {
+        const member = await guild.members.fetch(discordUser.id);
+        if (member) {
+          serverNick = member.displayName;
+          roles = member.roles.cache.filter(r => r.name !== '@everyone').map(r => ({
+            id: r.id,
+            name: r.name,
+            color: r.hexColor
+          }));
+          isDev = roles.some(r => 
+            r.name.toLowerCase().includes('game developer') || 
+            r.name.toLowerCase().includes('leader') || 
+            r.name.toLowerCase().includes('owner')
+          );
+        }
+      } catch (err) {
+        console.log('Member fetch issue:', err.message);
+      }
+    }
+
+    const userData = {
+      id: discordUser.id,
+      username: discordUser.username,
+      displayName: serverNick,
+      avatar: discordUser.avatar 
+        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png?size=128`
+        : 'https://cdn.discordapp.com/embed/avatars/0.png',
+      banner: discordUser.banner 
+        ? `https://cdn.discordapp.com/banners/${discordUser.id}/${discordUser.banner}.png?size=512` 
+        : null,
+      roles: roles,
+      isDev: isDev
+    };
+
+    const encodedPayload = Buffer.from(JSON.stringify(userData)).toString('base64');
+    res.redirect(`/?auth=${encodedPayload}`);
+  } catch (error) {
+    console.error('OAuth Callback Error:', error);
+    res.redirect('/?error=server_error');
+  }
+});
+
+// ---------------------------------------------------------------------
+// MULTIPLAYER GAME SOCKETS
+// ---------------------------------------------------------------------
 const players = {};
 
 discordClient.once('ready', () => {
   console.log(`🤖 Open Con Bot is online as: ${discordClient.user.tag}`);
-  
-  // Set explicit Online status with playing activity
   discordClient.user.setPresence({
-    activities: [{ name: 'Open Con World | Stardew Edition', type: ActivityType.Playing }],
+    activities: [{ name: 'Open Con World | 16-bit Expo', type: ActivityType.Playing }],
     status: 'online'
   });
 });
 
-// DISCORD -> GAME: Relay messages to the web world
 discordClient.on('messageCreate', (message) => {
   if (message.author.bot && message.webhookId == null) return;
 
@@ -64,6 +158,7 @@ discordClient.on('messageCreate', (message) => {
 
   io.emit('discordMessage', {
     author: message.author.username,
+    displayName: message.member ? message.member.displayName : message.author.username,
     avatar: message.author.displayAvatarURL({ extension: 'png', size: 64 }),
     channelId: message.channel.id,
     content: message.content,
@@ -71,20 +166,23 @@ discordClient.on('messageCreate', (message) => {
   });
 });
 
-// GAME CLIENTS (Socket.IO)
 io.on('connection', (socket) => {
-  console.log(`🎮 Player connected: ${socket.id}`);
+  console.log(`🎮 Player joined: ${socket.id}`);
 
   socket.on('joinGame', (userData) => {
     players[socket.id] = {
       id: socket.id,
-      username: userData.username || 'Traveler',
-      avatarUrl: userData.avatarUrl || 'https://cdn.discordapp.com/embed/avatars/0.png',
-      x: 450,
+      discordId: userData.id || null,
+      username: userData.username || 'Hero',
+      displayName: userData.displayName || userData.username || 'Hero',
+      avatar: userData.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png',
+      banner: userData.banner || null,
+      roles: userData.roles || [],
+      isDev: userData.isDev || false,
+      x: 480,
       y: 350,
       direction: 'down',
       isMoving: false,
-      color: userData.color || '#4b9cd3',
       room: 'lobby'
     };
 
@@ -103,23 +201,26 @@ io.on('connection', (socket) => {
     }
   });
 
-  // GAME -> DISCORD: Webhook dispatcher (appears as user's own name and avatar!)
   socket.on('sendGameChat', async (data) => {
     if (!data.channelId) return;
+    const player = players[socket.id];
+    if (!player) return;
 
     try {
       const channel = await discordClient.channels.fetch(data.channelId);
       if (!channel || !channel.isTextBased()) return;
 
       const webhook = await getOrCreateWebhook(channel);
+      const mentionPrefix = player.discordId ? `<@${player.discordId}>: ` : '';
+      const fullMessage = `${mentionPrefix}${data.message || ''}`;
 
       const payload = {
-        username: data.username || 'In-Game Attendee',
-        avatarURL: data.avatarUrl || undefined,
-        content: data.message || undefined
+        username: player.displayName,
+        avatarURL: player.avatar,
+        content: fullMessage,
+        allowed_mentions: { parse: [] } // SILENT PING
       };
 
-      // Support for sending images/files directly from the game
       if (data.fileData && data.fileName) {
         payload.files = [{
           attachment: Buffer.from(data.fileData.split(',')[1], 'base64'),
@@ -130,11 +231,18 @@ io.on('connection', (socket) => {
       if (webhook) {
         await webhook.send(payload);
       } else {
-        // Fallback to normal bot message if webhooks are restricted
-        await channel.send(`💬 **[${data.username}]**: ${data.message}`);
+        await channel.send({ content: `**[${player.displayName}]**: ${data.message}`, allowed_mentions: { parse: [] } });
       }
+
+      io.emit('gameMessage', {
+        playerId: socket.id,
+        displayName: player.displayName,
+        message: data.message,
+        room: player.room
+      });
+
     } catch (err) {
-      console.error('Error dispatching message:', err);
+      console.error('Error sending chat via webhook:', err);
     }
   });
 
