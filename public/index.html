@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Open Con World - 2D Discord Expo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    body {
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #game-container {
+      position: relative;
+      border: 4px solid #333;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    }
+    canvas {
+      display: block;
+      background: #1e1e24;
+      image-rendering: pixelated;
+    }
+    /* UI Overlays */
+    #ui-bar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .badge {
+      background: rgba(0, 0, 0, 0.7);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      border: 1px solid #444;
+    }
+    #chat-form {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      gap: 8px;
+    }
+    #chat-input {
+      flex: 1;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 2px solid #555;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    #chat-input:focus {
+      border-color: #5865F2;
+    }
+    #login-modal {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+    #login-modal h2 {
+      color: #5865F2;
+      font-size: 24px;
+    }
+    #login-input {
+      padding: 10px 16px;
+      border-radius: 6px;
+      border: 2px solid #444;
+      background: #222;
+      color: #fff;
+      font-size: 16px;
+      text-align: center;
+    }
+    #login-btn {
+      padding: 10px 24px;
+      background: #5865F2;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="gameCanvas" width="900" height="600"></canvas>
+
+  <div id="ui-bar">
+    <div class="badge" id="current-zone">Zone: Main Lobby (#main-chat)</div>
+    <div class="badge">Controls: WASD / Arrow Keys</div>
+  </div>
+
+  <form id="chat-form">
+    <input type="text" id="chat-input" placeholder="Press Enter to chat with Discord..." autocomplete="off" />
+  </form>
+
+  <div id="login-modal">
+    <h2>Welcome to Open Con World!</h2>
+    <p>Enter your superhero / attendee nickname:</p>
+    <input type="text" id="login-input" placeholder="e.g. PeterParker" maxlength="15" />
+    <button id="login-btn">Enter Convention Floor</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  // ==========================================
+  // DISCORD CHANNELS MAPPING
+  // Replace with your actual Discord Channel IDs
+  // ==========================================
+  const DISCORD_CHANNELS = {
+    lobby: '1351966487664918573',
+    dc: '1564610495171002399',
+    marvel: '1564610737744125972'
+  };
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const socket = io();
+
+  let myId = null;
+  let players = {};
+  let currentRoom = 'lobby';
+  let myName = 'Attendee';
+
+  // Floating speech bubbles cache { playerId: { text, expiresAt } }
+  const speechBubbles = {};
+
+  // Zones Layout Definition
+  const zones = {
+    dc: { x: 40, y: 100, w: 230, h: 400, color: '#004f9f', name: 'DC Hub (#dc-comics)' },
+    lobby: { x: 310, y: 100, w: 280, h: 400, color: '#333344', name: 'Main Lobby (#main-chat)' },
+    marvel: { x: 630, y: 100, w: 230, h: 400, color: '#b31b1b', name: 'Marvel Hub (#marvel-comics)' }
+  };
+
+  // Keyboard controls
+  const keys = {};
+  window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+  // Login handler
+  document.getElementById('login-btn').addEventListener('click', () => {
+    const inputVal = document.getElementById('login-input').value.trim();
+    if (inputVal) myName = inputVal;
+    document.getElementById('login-modal').style.display = 'none';
+
+    // Notify backend
+    socket.emit('joinGame', { username: myName });
+  });
+
+  // Socket.IO Events
+  socket.on('connect', () => { myId = socket.id; });
+
+  socket.on('currentPlayers', (serverPlayers) => {
+    players = serverPlayers;
+  });
+
+  socket.on('newPlayer', (playerInfo) => {
+    players[playerInfo.id] = playerInfo;
+  });
+
+  socket.on('playerMoved', (playerInfo) => {
+    if (players[playerInfo.id]) {
+      players[playerInfo.id].x = playerInfo.x;
+      players[playerInfo.id].y = playerInfo.y;
+      players[playerInfo.id].room = playerInfo.room;
+    }
+  });
+
+  socket.on('playerDisconnected', (id) => {
+    delete players[id];
+    delete speechBubbles[id];
+  });
+
+  // Receive messages typed on Discord
+  socket.on('discordMessage', (data) => {
+    // Show a broadcast bubble above the room
+    const targetRoom = Object.keys(DISCORD_CHANNELS).find(key => DISCORD_CHANNELS[key] === data.channelId) || 'lobby';
+    
+    // Display global notice on canvas
+    speechBubbles['discord_' + Date.now()] = {
+      text: `[Discord] ${data.author}: ${data.content}`,
+      x: zones[targetRoom] ? zones[targetRoom].x + 20 : 400,
+      y: zones[targetRoom] ? zones[targetRoom].y + 30 : 150,
+      expiresAt: Date.now() + 6000
+    };
+  });
+
+  // Chat Submission (In-Game -> Discord)
+  const chatForm = document.getElementById('chat-form');
+  const chatInput = document.getElementById('chat-input');
+
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const msg = chatInput.value.trim();
+    if (!msg) return;
+
+    // Send to Discord via current room channel ID
+    const targetChannelId = DISCORD_CHANNELS[currentRoom] || DISCORD_CHANNELS.lobby;
+    socket.emit('sendGameChat', {
+      channelId: targetChannelId,
+      username: myName,
+      message: msg
+    });
+
+    // Show speech bubble above local player
+    if (myId && players[myId]) {
+      speechBubbles[myId] = {
+        text: msg,
+        expiresAt: Date.now() + 5000
+      };
+    }
+
+    chatInput.value = '';
+    chatInput.blur();
+  });
+
+  // Main Game Loop
+  function update() {
+    if (myId && players[myId]) {
+      const p = players[myId];
+      const speed = 4;
+      let moved = false;
+
+      if ((keys['w'] || keys['arrowup']) && p.y > 50) { p.y -= speed; moved = true; }
+      if ((keys['s'] || keys['arrowdown']) && p.y < canvas.height - 50) { p.y += speed; moved = true; }
+      if ((keys['a'] || keys['arrowleft']) && p.x > 30) { p.x -= speed; moved = true; }
+      if ((keys['d'] || keys['arrowright']) && p.x < canvas.width - 30) { p.x += speed; moved = true; }
+
+      // Detect current room based on position
+      let detectedRoom = 'lobby';
+      if (p.x < 290) detectedRoom = 'dc';
+      else if (p.x > 610) detectedRoom = 'marvel';
+
+      if (detectedRoom !== currentRoom) {
+        currentRoom = detectedRoom;
+        document.getElementById('current-zone').innerText = `Zone: ${zones[currentRoom].name}`;
+      }
+
+      if (moved) {
+        socket.emit('playerMovement', { x: p.x, y: p.y, room: currentRoom });
+      }
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw convention zones/booths
+    for (const key in zones) {
+      const z = zones[key];
+      ctx.fillStyle = z.color;
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(z.x, z.y, z.w, z.h);
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = z.color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(z.x, z.y, z.w, z.h);
+
+      // Booth Banner Label
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 15px monospace';
+      ctx.fillText(z.name, z.x + 12, z.y + 30);
+    }
+
+    // Draw players
+    const now = Date.now();
+    for (const id in players) {
+      const p = players[id];
+
+      // Draw avatar square (retro 2D token)
+      ctx.fillStyle = (id === myId) ? '#00ffcc' : '#ff9900';
+      ctx.fillRect(p.x - 16, p.y - 16, 32, 32);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.x - 16, p.y - 16, 32, 32);
+
+      // Name label
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.username, p.x, p.y - 24);
+
+      // Draw local speech bubble
+      if (speechBubbles[id] && speechBubbles[id].expiresAt > now) {
+        drawSpeechBubble(ctx, p.x, p.y - 45, speechBubbles[id].text);
+      }
+    }
+
+    // Draw floating Discord broadcast messages
+    for (const key in speechBubbles) {
+      const b = speechBubbles[key];
+      if (b.expiresAt > now && b.x !== undefined) {
+        drawSpeechBubble(ctx, b.x, b.y, b.text, '#5865F2');
+      }
+    }
+
+    requestAnimationFrame(() => {
+      update();
+      draw();
+    });
+  }
+
+  function drawSpeechBubble(ctx, x, y, text, bgColor = '#222') {
+    ctx.font = '12px monospace';
+    const textWidth = ctx.measureText(text).width;
+    const padding = 6;
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 20);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 20);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, x, y);
+  }
+
+  draw();
+</script>
+</body>
+</html>
