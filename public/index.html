@@ -2,16 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Open Con World - 2D Discord Expo</title>
+  <title>Open Con World - Stardew Edition</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Courier New', Courier, monospace;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', Courier, monospace; }
     body {
-      background: #111;
+      background: #0f0f14;
       color: #eee;
       display: flex;
       flex-direction: column;
@@ -22,58 +17,89 @@
     }
     #game-container {
       position: relative;
-      border: 4px solid #333;
-      border-radius: 8px;
+      border: 4px solid #2e2e38;
+      border-radius: 10px;
       overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.9);
     }
     canvas {
       display: block;
-      background: #1e1e24;
+      background: #181820;
       image-rendering: pixelated;
     }
-    /* UI Overlays */
     #ui-bar {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
+      top: 12px;
+      left: 12px;
+      right: 12px;
       display: flex;
       justify-content: space-between;
       pointer-events: none;
     }
     .badge {
-      background: rgba(0, 0, 0, 0.7);
-      padding: 6px 14px;
+      background: rgba(15, 15, 20, 0.85);
+      padding: 8px 16px;
       border-radius: 6px;
       font-size: 13px;
-      border: 1px solid #444;
+      border: 1px solid #3a3a4c;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
-    #chat-form {
+    #chat-bar-container {
       position: absolute;
       bottom: 12px;
       left: 12px;
       right: 12px;
       display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #emoji-quickbar {
+      display: flex;
+      gap: 6px;
+    }
+    .emoji-btn {
+      background: rgba(20, 20, 28, 0.85);
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .emoji-btn:hover { transform: scale(1.15); }
+    #chat-form {
+      display: flex;
       gap: 8px;
+      align-items: center;
     }
     #chat-input {
       flex: 1;
       padding: 10px 14px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 2px solid #555;
+      background: rgba(18, 18, 24, 0.95);
+      border: 2px solid #3e3e50;
       border-radius: 6px;
       color: #fff;
       font-size: 14px;
       outline: none;
     }
-    #chat-input:focus {
-      border-color: #5865F2;
+    #chat-input:focus { border-color: #5865F2; }
+    .action-btn {
+      padding: 10px 16px;
+      background: #2f3136;
+      border: 1px solid #4f545c;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
     }
+    .action-btn:hover { background: #5865F2; }
+    #file-input { display: none; }
+    
+    /* Login Modal */
     #login-modal {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.9);
+      background: rgba(10, 10, 15, 0.95);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -81,49 +107,65 @@
       gap: 16px;
       z-index: 10;
     }
-    #login-modal h2 {
-      color: #5865F2;
-      font-size: 24px;
-    }
-    #login-input {
-      padding: 10px 16px;
+    #login-modal h2 { color: #5865F2; font-size: 26px; }
+    .input-group { display: flex; flex-direction: column; gap: 6px; width: 280px; }
+    .input-group label { font-size: 12px; color: #888; }
+    .input-group input {
+      padding: 10px 14px;
       border-radius: 6px;
-      border: 2px solid #444;
-      background: #222;
+      border: 2px solid #333;
+      background: #1c1c24;
       color: #fff;
-      font-size: 16px;
-      text-align: center;
+      font-size: 15px;
     }
     #login-btn {
-      padding: 10px 24px;
+      padding: 12px 28px;
       background: #5865F2;
       border: none;
       border-radius: 6px;
       color: #fff;
       font-weight: bold;
       cursor: pointer;
+      font-size: 16px;
     }
   </style>
 </head>
 <body>
 
 <div id="game-container">
-  <canvas id="gameCanvas" width="900" height="600"></canvas>
+  <canvas id="gameCanvas" width="960" height="600"></canvas>
 
   <div id="ui-bar">
     <div class="badge" id="current-zone">Zone: Main Lobby (#main-chat)</div>
-    <div class="badge">Controls: WASD / Arrow Keys</div>
+    <div class="badge">Controls: WASD / Arrows | 📎 Attach Image</div>
   </div>
 
-  <form id="chat-form">
-    <input type="text" id="chat-input" placeholder="Press Enter to chat with Discord..." autocomplete="off" />
-  </form>
+  <div id="chat-bar-container">
+    <div id="emoji-quickbar">
+      <button class="emoji-btn" onclick="insertEmoji('👋')">👋</button>
+      <button class="emoji-btn" onclick="insertEmoji('🔥')">🔥</button>
+      <button class="emoji-btn" onclick="insertEmoji('❤️')">❤️</button>
+      <button class="emoji-btn" onclick="insertEmoji('💀')">💀</button>
+      <button class="emoji-btn" onclick="insertEmoji('🦸')">🦸</button>
+    </div>
+    <form id="chat-form">
+      <button type="button" class="action-btn" onclick="document.getElementById('file-input').click()">📎</button>
+      <input type="file" id="file-input" accept="image/*" />
+      <input type="text" id="chat-input" placeholder="Chat here... (Webhook relays with your avatar & name)" autocomplete="off" />
+    </form>
+  </div>
 
   <div id="login-modal">
-    <h2>Welcome to Open Con World!</h2>
-    <p>Enter your superhero / attendee nickname:</p>
-    <input type="text" id="login-input" placeholder="e.g. PeterParker" maxlength="15" />
-    <button id="login-btn">Enter Convention Floor</button>
+    <h2>🌟 Open Con: Stardew Floor</h2>
+    <div class="input-group">
+      <label>Your Name / Handle:</label>
+      <input type="text" id="login-name" placeholder="e.g. Unity" maxlength="18" />
+    </div>
+    <div class="input-group">
+      <label>Avatar Image URL (Optional):</label>
+      <input type="text" id="login-avatar" placeholder="Paste Discord avatar or leave blank" />
+    </div>
+    <button id="login-btn">Enter Convention</button>
   </div>
 </div>
 
@@ -131,7 +173,6 @@
 <script>
   // ==========================================
   // DISCORD CHANNELS MAPPING
-  // Replace with your actual Discord Channel IDs
   // ==========================================
   const DISCORD_CHANNELS = {
     lobby: '1351966487664918573',
@@ -147,115 +188,137 @@
   let players = {};
   let currentRoom = 'lobby';
   let myName = 'Attendee';
+  let myAvatarUrl = '';
+  let pendingFile = null;
 
-  // Floating speech bubbles cache { playerId: { text, expiresAt } }
   const speechBubbles = {};
 
-  // Zones Layout Definition
   const zones = {
-    dc: { x: 40, y: 100, w: 230, h: 400, color: '#004f9f', name: 'DC Hub (#dc-comics)' },
-    lobby: { x: 310, y: 100, w: 280, h: 400, color: '#333344', name: 'Main Lobby (#main-chat)' },
-    marvel: { x: 630, y: 100, w: 230, h: 400, color: '#b31b1b', name: 'Marvel Hub (#marvel-comics)' }
+    dc: { x: 40, y: 120, w: 260, h: 420, color: '#004f9f', floorColor: '#12253d', name: 'DC Hub (#dc-comics)' },
+    lobby: { x: 330, y: 120, w: 300, h: 420, color: '#4a4a5a', floorColor: '#252530', name: 'Main Lobby (#main-chat)' },
+    marvel: { x: 660, y: 120, w: 260, h: 420, color: '#b31b1b', floorColor: '#3d1616', name: 'Marvel Hub (#marvel-comics)' },
+    devLab: { x: 740, y: 20, w: 180, h: 80, color: '#8e44ad', floorColor: '#2b1b36', name: 'N.E.M.E.S.I.S. Lab' }
   };
 
-  // Keyboard controls
   const keys = {};
   window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-  // Login handler
+  function insertEmoji(em) {
+    const input = document.getElementById('chat-input');
+    input.value += em;
+    input.focus();
+  }
+
+  // File Upload listener
+  document.getElementById('file-input').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      pendingFile = {
+        name: file.name,
+        data: evt.target.result
+      };
+      document.getElementById('chat-input').placeholder = `[Attached: ${file.name}] Press Enter to send!`;
+      document.getElementById('chat-input').focus();
+    };
+    reader.readAsDataURL(file);
+  });
+
   document.getElementById('login-btn').addEventListener('click', () => {
-    const inputVal = document.getElementById('login-input').value.trim();
-    if (inputVal) myName = inputVal;
+    const nameVal = document.getElementById('login-name').value.trim();
+    const avatarVal = document.getElementById('login-avatar').value.trim();
+    if (nameVal) myName = nameVal;
+    if (avatarVal) myAvatarUrl = avatarVal;
+
     document.getElementById('login-modal').style.display = 'none';
-
-    // Notify backend
-    socket.emit('joinGame', { username: myName });
+    socket.emit('joinGame', {
+      username: myName,
+      avatarUrl: myAvatarUrl
+    });
   });
 
-  // Socket.IO Events
   socket.on('connect', () => { myId = socket.id; });
-
-  socket.on('currentPlayers', (serverPlayers) => {
-    players = serverPlayers;
-  });
-
-  socket.on('newPlayer', (playerInfo) => {
-    players[playerInfo.id] = playerInfo;
-  });
-
-  socket.on('playerMoved', (playerInfo) => {
-    if (players[playerInfo.id]) {
-      players[playerInfo.id].x = playerInfo.x;
-      players[playerInfo.id].y = playerInfo.y;
-      players[playerInfo.id].room = playerInfo.room;
+  socket.on('currentPlayers', (serverPlayers) => { players = serverPlayers; });
+  socket.on('newPlayer', (p) => { players[p.id] = p; });
+  socket.on('playerMoved', (p) => {
+    if (players[p.id]) {
+      Object.assign(players[p.id], p);
     }
   });
-
   socket.on('playerDisconnected', (id) => {
     delete players[id];
     delete speechBubbles[id];
   });
 
-  // Receive messages typed on Discord
   socket.on('discordMessage', (data) => {
-    // Show a broadcast bubble above the room
     const targetRoom = Object.keys(DISCORD_CHANNELS).find(key => DISCORD_CHANNELS[key] === data.channelId) || 'lobby';
-    
-    // Display global notice on canvas
     speechBubbles['discord_' + Date.now()] = {
-      text: `[Discord] ${data.author}: ${data.content}`,
-      x: zones[targetRoom] ? zones[targetRoom].x + 20 : 400,
-      y: zones[targetRoom] ? zones[targetRoom].y + 30 : 150,
+      text: `${data.author}: ${data.content || '[File/Image]'}`,
+      x: zones[targetRoom] ? zones[targetRoom].x + 30 : 400,
+      y: zones[targetRoom] ? zones[targetRoom].y + 40 : 150,
       expiresAt: Date.now() + 6000
     };
   });
 
-  // Chat Submission (In-Game -> Discord)
+  // Chat Submission
   const chatForm = document.getElementById('chat-form');
   const chatInput = document.getElementById('chat-input');
 
   chatForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const msg = chatInput.value.trim();
-    if (!msg) return;
+    if (!msg && !pendingFile) return;
 
-    // Send to Discord via current room channel ID
     const targetChannelId = DISCORD_CHANNELS[currentRoom] || DISCORD_CHANNELS.lobby;
+    
     socket.emit('sendGameChat', {
       channelId: targetChannelId,
       username: myName,
-      message: msg
+      avatarUrl: myAvatarUrl,
+      message: msg,
+      fileData: pendingFile ? pendingFile.data : null,
+      fileName: pendingFile ? pendingFile.name : null
     });
 
-    // Show speech bubble above local player
     if (myId && players[myId]) {
       speechBubbles[myId] = {
-        text: msg,
+        text: msg || '📎 [Sent Attachment]',
         expiresAt: Date.now() + 5000
       };
     }
 
+    pendingFile = null;
     chatInput.value = '';
+    chatInput.placeholder = 'Chat here... (Webhook relays with your avatar & name)';
     chatInput.blur();
   });
 
-  // Main Game Loop
+  // Main Game Logic Loop
   function update() {
     if (myId && players[myId]) {
       const p = players[myId];
-      const speed = 4;
+      const speed = 3.5;
       let moved = false;
+      let dir = p.direction;
 
-      if ((keys['w'] || keys['arrowup']) && p.y > 50) { p.y -= speed; moved = true; }
-      if ((keys['s'] || keys['arrowdown']) && p.y < canvas.height - 50) { p.y += speed; moved = true; }
-      if ((keys['a'] || keys['arrowleft']) && p.x > 30) { p.x -= speed; moved = true; }
-      if ((keys['d'] || keys['arrowright']) && p.x < canvas.width - 30) { p.x += speed; moved = true; }
+      if (keys['w'] || keys['arrowup']) { p.y -= speed; dir = 'up'; moved = true; }
+      if (keys['s'] || keys['arrowdown']) { p.y += speed; dir = 'down'; moved = true; }
+      if (keys['a'] || keys['arrowleft']) { p.x -= speed; dir = 'left'; moved = true; }
+      if (keys['d'] || keys['arrowright']) { p.x += speed; dir = 'right'; moved = true; }
 
-      // Detect current room based on position
+      // Restrict boundaries
+      p.x = Math.max(30, Math.min(canvas.width - 30, p.x));
+      p.y = Math.max(40, Math.min(canvas.height - 50, p.y));
+
+      p.direction = dir;
+      p.isMoving = moved;
+
+      // Zone detection
       let detectedRoom = 'lobby';
-      if (p.x < 290) detectedRoom = 'dc';
-      else if (p.x > 610) detectedRoom = 'marvel';
+      if (p.x < 310) detectedRoom = 'dc';
+      else if (p.x > 650) detectedRoom = 'marvel';
 
       if (detectedRoom !== currentRoom) {
         currentRoom = detectedRoom;
@@ -263,56 +326,112 @@
       }
 
       if (moved) {
-        socket.emit('playerMovement', { x: p.x, y: p.y, room: currentRoom });
+        socket.emit('playerMovement', {
+          x: p.x,
+          y: p.y,
+          direction: p.direction,
+          isMoving: p.isMoving,
+          room: currentRoom
+        });
       }
     }
+  }
+
+  // Pixel Art Character Renderer (Stardew Style)
+  function drawPixelCharacter(ctx, x, y, direction, isMoving, username) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const stepBob = isMoving ? Math.sin(Date.now() / 90) * 2 : 0;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(0, 16, 12, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legs / Walking animation
+    ctx.fillStyle = '#2c3e50'; // pants
+    if (isMoving) {
+      const legOffset = Math.sin(Date.now() / 90) * 4;
+      ctx.fillRect(-6, 8, 4, 8 + legOffset);
+      ctx.fillRect(2, 8, 4, 8 - legOffset);
+    } else {
+      ctx.fillRect(-6, 8, 4, 8);
+      ctx.fillRect(2, 8, 4, 8);
+    }
+
+    // Torso / T-Shirt
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(-8, -4 + stepBob, 16, 13);
+
+    // Head / Face
+    ctx.fillStyle = '#f5cba7'; // skin tone
+    ctx.fillRect(-7, -18 + stepBob, 14, 14);
+
+    // Hair
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(-8, -21 + stepBob, 16, 7);
+    if (direction === 'left') ctx.fillRect(-8, -17 + stepBob, 4, 6);
+    if (direction === 'right') ctx.fillRect(4, -17 + stepBob, 4, 6);
+
+    // Eyes (based on direction)
+    ctx.fillStyle = '#111';
+    if (direction === 'down') {
+      ctx.fillRect(-4, -13 + stepBob, 2, 3);
+      ctx.fillRect(2, -13 + stepBob, 2, 3);
+    } else if (direction === 'left') {
+      ctx.fillRect(-6, -13 + stepBob, 2, 3);
+    } else if (direction === 'right') {
+      ctx.fillRect(4, -13 + stepBob, 2, 3);
+    }
+
+    // Username label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 4;
+    ctx.fillText(username, 0, -26 + stepBob);
+
+    ctx.restore();
   }
 
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw convention zones/booths
+    // Draw Expo Floor Patterns
     for (const key in zones) {
       const z = zones[key];
-      ctx.fillStyle = z.color;
-      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = z.floorColor;
       ctx.fillRect(z.x, z.y, z.w, z.h);
-      ctx.globalAlpha = 1.0;
+
+      // Booth outline border
       ctx.strokeStyle = z.color;
       ctx.lineWidth = 3;
       ctx.strokeRect(z.x, z.y, z.w, z.h);
 
-      // Booth Banner Label
+      // Booth banner label
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 15px monospace';
-      ctx.fillText(z.name, z.x + 12, z.y + 30);
+      ctx.font = 'bold 14px monospace';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 3;
+      ctx.fillText(z.name, z.x + 12, z.y + 26);
     }
 
-    // Draw players
+    // Draw Players
     const now = Date.now();
     for (const id in players) {
       const p = players[id];
+      drawPixelCharacter(ctx, p.x, p.y, p.direction || 'down', p.isMoving || false, p.username);
 
-      // Draw avatar square (retro 2D token)
-      ctx.fillStyle = (id === myId) ? '#00ffcc' : '#ff9900';
-      ctx.fillRect(p.x - 16, p.y - 16, 32, 32);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(p.x - 16, p.y - 16, 32, 32);
-
-      // Name label
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.username, p.x, p.y - 24);
-
-      // Draw local speech bubble
+      // Speech bubble
       if (speechBubbles[id] && speechBubbles[id].expiresAt > now) {
-        drawSpeechBubble(ctx, p.x, p.y - 45, speechBubbles[id].text);
+        drawSpeechBubble(ctx, p.x, p.y - 50, speechBubbles[id].text);
       }
     }
 
-    // Draw floating Discord broadcast messages
+    // Floating Discord broadcast messages
     for (const key in speechBubbles) {
       const b = speechBubbles[key];
       if (b.expiresAt > now && b.x !== undefined) {
@@ -326,17 +445,17 @@
     });
   }
 
-  function drawSpeechBubble(ctx, x, y, text, bgColor = '#222') {
+  function drawSpeechBubble(ctx, x, y, text, bgColor = 'rgba(25, 25, 35, 0.95)') {
     ctx.font = '12px monospace';
     const textWidth = ctx.measureText(text).width;
-    const padding = 6;
+    const padding = 8;
     ctx.fillStyle = bgColor;
-    ctx.fillRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 20);
+    ctx.fillRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 22);
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 20);
+    ctx.strokeRect(x - textWidth / 2 - padding, y - 14, textWidth + padding * 2, 22);
     ctx.fillStyle = '#fff';
-    ctx.fillText(text, x, y);
+    ctx.fillText(text, x, y + 1);
   }
 
   draw();
